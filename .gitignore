@@ -1,8 +1,13 @@
-*/__pycache__
+.python-version
+
+**/__pycache__
 *.pth
-data/
+data
+slurm_logs/
+experiments/
 best/
 /.idea/
+vis/
 
 dist/
 build/
