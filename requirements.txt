@@ -12,3 +12,6 @@ timm==0.4.5
 tqdm
 transforms3d
 termcolor
+torch==1.10.2
+torchvision
+ninja
