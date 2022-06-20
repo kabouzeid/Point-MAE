@@ -48,16 +48,18 @@ def get_config(args, logger=None):
     if args.resume:
         cfg_path = os.path.join(args.experiment_path, 'config.yaml')
         if not os.path.exists(cfg_path):
+            save_experiment_config(args, logger)
+        if not os.path.exists(cfg_path):
             print_log("Failed to resume", logger = logger)
             raise FileNotFoundError()
         print_log(f'Resume yaml from {cfg_path}', logger = logger)
         args.config = cfg_path
     config = cfg_from_yaml_file(args.config)
     if not args.resume and args.local_rank == 0:
-        save_experiment_config(args, config, logger)
+        save_experiment_config(args, logger)
     return config
 
-def save_experiment_config(args, config, logger = None):
+def save_experiment_config(args, logger = None):
     config_path = os.path.join(args.experiment_path, 'config.yaml')
     os.system('cp %s %s' % (args.config, config_path))
     print_log(f'Copy the Config file from {args.config} to {config_path}',logger = logger )
