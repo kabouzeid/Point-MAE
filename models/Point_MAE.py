@@ -355,18 +355,31 @@ class Point_MAE(nn.Module):
         print_log(f'[Point_MAE] divide point cloud into G{self.num_group} x S{self.group_size} points ...', logger ='Point_MAE')
         self.group_divider = Group(num_group = self.num_group, group_size = self.group_size)
 
-        # prediction head
+        # old prediction head
         self.increase_dim = nn.Sequential(
             # nn.Conv1d(self.trans_dim, 1024, 1),
             # nn.BatchNorm1d(1024),
             # nn.LeakyReLU(negative_slope=0.2),
             nn.Conv1d(self.trans_dim, 3*self.group_size, 1)
         )
+        
+        # new prediction head
+        self.predict_occupancies = nn.Sequential(
+            # nn.Conv1d(self.trans_dim, 1024, 1),
+            # nn.BatchNorm1d(1024),
+            # nn.LeakyReLU(negative_slope=0.2),
+            nn.Conv1d(self.trans_dim + 3, 192, 1), # TODO: make 192 configurable
+            nn.ReLU(),
+            nn.Conv1d(192, 1, 1)
+        )
 
         trunc_normal_(self.mask_token, std=.02)
         self.loss = config.loss
         # loss
         self.build_loss_func(self.loss)
+        
+        self.bceloss = nn.BCELoss()
+        self.sigmoid = nn.Sigmoid()
 
     def build_loss_func(self, loss_type):
         if loss_type == "cdl1":
@@ -376,7 +389,13 @@ class Point_MAE(nn.Module):
         else:
             raise NotImplementedError
             # self.loss_func = emd().cuda()
-
+            
+    def sample_negative(self, positive): # positive.shape: (B, M, S, 3)
+        min = positive.min(dim=2, keepdims=True).values.min(dim=3, keepdims=True).values
+        max = positive.max(dim=2, keepdims=True).values.max(dim=3, keepdims=True).values
+        negative = (min - max) * torch.rand_like(positive) + max
+        # TODO: filter negatives that are too close to positives
+        return negative
 
     def forward(self, pts, vis = False, **kwargs):
         neighborhood, center = self.group_divider(pts)
@@ -394,27 +413,57 @@ class Point_MAE(nn.Module):
         pos_full = torch.cat([pos_emd_vis, pos_emd_mask], dim=1)
 
         x_rec = self.MAE_decoder(x_full, pos_full, N)
-
+        
+        # ignore below, instead:
+        # - sample self.group_size negative points in neighborhood[mask].reshape(B, M, self.group_size, 3)
+        # - two layer occupancy prediction head that takes x_rec + sampled point location
+        # - accumulate losses for pos and negative points
+        #
+        # prediction head is (B, C + 3, M * Q) -> (B, 192, M * Q) -> (B, 1, M * Q)
+        
         B, M, C = x_rec.shape
-        rebuild_points = self.increase_dim(x_rec.transpose(1, 2)).transpose(1, 2).reshape(B * M, -1, 3)  # B M 1024
+        
+        x_pos = neighborhood[mask].reshape(B, M, self.group_size, 3) # B M S 3
+        x_neg = self.sample_negative(x_pos)
+        x_queries = torch.cat((x_pos, x_neg), dim=2) # B M Q 3
+        Q = x_queries.shape[2]
 
-        gt_points = neighborhood[mask].reshape(B*M,-1,3)
-        loss1 = self.loss_func(rebuild_points, gt_points)
+        # (B, M, C) + (B, M, Q, 3) -> (B, M, Q, C + 3)
+        x_rec_and_queries = torch.cat((x_rec.unsqueeze(2).expand(-1, -1, Q, -1), x_queries), dim=3) # B M Q C+3
+        x_rec_and_queries = x_rec_and_queries.reshape(B, M*Q, C+3)
 
-        if vis: #visualization
-            vis_points = neighborhood[~mask].reshape(B * (self.num_group - M), -1, 3)
-            full_vis = vis_points + center[~mask].unsqueeze(1)
-            full_rebuild = rebuild_points + center[mask].unsqueeze(1)
-            full = torch.cat([full_vis, full_rebuild], dim=0)
-            # full_points = torch.cat([rebuild_points,vis_points], dim=0)
-            full_center = torch.cat([center[mask], center[~mask]], dim=0)
-            # full = full_points + full_center.unsqueeze(1)
-            ret2 = full_vis.reshape(-1, 3).unsqueeze(0)
-            ret1 = full.reshape(-1, 3).unsqueeze(0)
-            # return ret1, ret2
-            return ret1, ret2, full_center
-        else:
-            return loss1
+        pred_occupancies = self.predict_occupancies(x_rec_and_queries.transpose(1,2)).transpose(1,2).reshape(B, M, Q) # B M Q
+        
+        targets = torch.cat((torch.ones(x_pos.shape[:-1], device=x_pos.device), torch.zeros(x_neg.shape[:-1], device=x_neg.device)), dim=2) # B M Q
+        loss1 = self.bceloss(self.sigmoid(pred_occupancies), targets)
+        return loss1
+
+
+
+
+
+        
+
+        # B, M, C = x_rec.shape
+        # rebuild_points = self.increase_dim(x_rec.transpose(1, 2)).transpose(1, 2).reshape(B * M, -1, 3)  # B M 1024
+
+        # gt_points = neighborhood[mask].reshape(B*M,-1,3)
+        # loss1 = self.loss_func(rebuild_points, gt_points)
+
+        # if vis: #visualization
+        #     vis_points = neighborhood[~mask].reshape(B * (self.num_group - M), -1, 3)
+        #     full_vis = vis_points + center[~mask].unsqueeze(1)
+        #     full_rebuild = rebuild_points + center[mask].unsqueeze(1)
+        #     full = torch.cat([full_vis, full_rebuild], dim=0)
+        #     # full_points = torch.cat([rebuild_points,vis_points], dim=0)
+        #     full_center = torch.cat([center[mask], center[~mask]], dim=0)
+        #     # full = full_points + full_center.unsqueeze(1)
+        #     ret2 = full_vis.reshape(-1, 3).unsqueeze(0)
+        #     ret1 = full.reshape(-1, 3).unsqueeze(0)
+        #     # return ret1, ret2
+        #     return ret1, ret2, full_center
+        # else:
+        #     return loss1
 
 # finetune model
 @MODELS.register_module()
