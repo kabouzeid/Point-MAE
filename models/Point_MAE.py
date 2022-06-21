@@ -1,3 +1,4 @@
+from turtle import pos
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -390,12 +391,12 @@ class Point_MAE(nn.Module):
             raise NotImplementedError
             # self.loss_func = emd().cuda()
             
-    def sample_negative(self, positive): # positive.shape: (B, M, S, 3)
-        min = positive.min(dim=2, keepdims=True).values.min(dim=3, keepdims=True).values
-        max = positive.max(dim=2, keepdims=True).values.max(dim=3, keepdims=True).values
-        negative = (min - max) * torch.rand_like(positive) + max
-        # TODO: filter negatives that are too close to positives
-        return negative
+    def sample_random_around(self, points, num): # positive.shape: (B, M, S, 3)
+        size = list(points.shape)
+        size[2] = num
+        min = points.min(dim=2, keepdims=True).values.min(dim=3, keepdims=True).values
+        max = points.max(dim=2, keepdims=True).values.max(dim=3, keepdims=True).values
+        return (min - max) * torch.rand(size, device=points.device) + max
 
     def forward(self, pts, vis = False, **kwargs):
         neighborhood, center = self.group_divider(pts)
@@ -424,9 +425,25 @@ class Point_MAE(nn.Module):
         B, M, C = x_rec.shape
         
         x_pos = neighborhood[mask].reshape(B, M, self.group_size, 3) # B M S 3
-        x_neg = self.sample_negative(x_pos)
-        x_queries = torch.cat((x_pos, x_neg), dim=2) # B M Q 3
+        x_rand = self.sample_random_around(x_pos, self.group_size) # B M R 3
+        x_queries = torch.cat((x_pos, x_rand), dim=2) # B M Q 3
         Q = x_queries.shape[2]
+        
+        # threshold = torch.linalg.vector_norm((x_pos.unsqueeze(2) - x_pos.unsqueeze(3)), dim=-1).min(dim=3).values.min(dim=2).values
+        threshold = torch.cdist(x_pos, x_pos) # B M S S
+        threshold[torch.eye(x_pos.shape[2]).repeat(B, M, 1, 1).bool()] = torch.inf # exclude self from min
+        threshold = threshold.min(dim=-1).values.mean(dim=-1) # B M mean min distance to (other) points
+        
+        # B M R S 3 -> B M R
+        # distances = torch.linalg.vector_norm((x_rand.unsqueeze(2) - x_pos.unsqueeze(3)), dim=-1).min(dim=3).values # use torch.cdist instead
+        # B M R 3, B M S 3 -> B M R
+        distances = torch.cdist(x_rand, x_pos).min(dim=-1).values
+        likelihoods = torch.sigmoid(6 - ((6 / threshold).unsqueeze(-1) * distances))
+
+        targets = torch.cat((
+            torch.ones(x_pos.shape[:-1], device=x_pos.device), # B M S
+            likelihoods # B M R
+        ), dim=2) # B M Q
 
         # (B, M, C) + (B, M, Q, 3) -> (B, M, Q, C + 3)
         x_rec_and_queries = torch.cat((x_rec.unsqueeze(2).expand(-1, -1, Q, -1), x_queries), dim=3) # B M Q C+3
@@ -434,7 +451,6 @@ class Point_MAE(nn.Module):
 
         pred_occupancies = self.predict_occupancies(x_rec_and_queries.transpose(1,2)).transpose(1,2).reshape(B, M, Q) # B M Q
         
-        targets = torch.cat((torch.ones(x_pos.shape[:-1], device=x_pos.device), torch.zeros(x_neg.shape[:-1], device=x_neg.device)), dim=2) # B M Q
         loss1 = self.bceloss(self.sigmoid(pred_occupancies), targets)
         return loss1
 
