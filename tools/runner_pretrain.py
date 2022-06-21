@@ -71,8 +71,11 @@ def run_net(args, config, train_writer=None, val_writer=None):
 
     # resume ckpts
     if args.resume:
-        start_epoch, best_metric = builder.resume_model(base_model, args, logger = logger)
-        best_metrics = Acc_Metric(best_metric)
+        try:
+            start_epoch, best_metric = builder.resume_model(base_model, args, logger = logger)
+            best_metrics = Acc_Metric(best_metrics)
+        except FileNotFoundError:
+            pass
     elif args.start_ckpts is not None:
         builder.load_model(base_model, args.start_ckpts, logger = logger)
 
@@ -91,7 +94,10 @@ def run_net(args, config, train_writer=None, val_writer=None):
     optimizer, scheduler = builder.build_opti_sche(base_model, config)
     
     if args.resume:
-        builder.resume_optimizer(optimizer, args, logger = logger)
+        try:
+            builder.resume_optimizer(optimizer, args, logger = logger)
+        except FileNotFoundError:
+            pass
 
     # trainval
     # training

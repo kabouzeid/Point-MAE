@@ -92,7 +92,7 @@ def resume_model(base_model, args, logger = None):
     ckpt_path = os.path.join(args.experiment_path, 'ckpt-last.pth')
     if not os.path.exists(ckpt_path):
         print_log(f'[RESUME INFO] no checkpoint file from path {ckpt_path}...', logger = logger)
-        return 0, 0
+        raise FileNotFoundError()
     print_log(f'[RESUME INFO] Loading model weights from {ckpt_path}...', logger = logger )
 
     # load state dict
@@ -117,7 +117,7 @@ def resume_optimizer(optimizer, args, logger = None):
     ckpt_path = os.path.join(args.experiment_path, 'ckpt-last.pth')
     if not os.path.exists(ckpt_path):
         print_log(f'[RESUME INFO] no checkpoint file from path {ckpt_path}...', logger = logger)
-        return 0, 0, 0
+        raise FileNotFoundError()
     print_log(f'[RESUME INFO] Loading optimizer from {ckpt_path}...', logger = logger )
     # load state dict
     state_dict = torch.load(ckpt_path, map_location='cpu')
