@@ -3,8 +3,8 @@
 **/__pycache__
 *.pth
 data
-slurm_logs/
-experiments/
+slurm_logs
+experiments
 best/
 /.idea/
 vis/
