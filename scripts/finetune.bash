@@ -16,4 +16,4 @@
 # or this one https://github.com/statgen/SLURM-examples
 # https://github.com/cdt-data-science/cluster-scripts
 
-python main.py --config cfgs/finetune_modelnet.yaml --finetune_model --exp_name "$1" --ckpts experiments/pretrain/cfgs/"$1"/ckpt-last.pth --resume
+python main.py --config cfgs/finetune_modelnet.yaml --finetune_model --exp_name "$2" --ckpts experiments/pretrain/cfgs/"$1"/ckpt-last.pth --resume
