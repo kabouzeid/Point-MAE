@@ -235,15 +235,46 @@ class get_model(nn.Module):
     def load_model_from_ckpt(self, bert_ckpt_path):
         if bert_ckpt_path is not None:
             ckpt = torch.load(bert_ckpt_path)
-            base_ckpt = {k.replace("module.", ""): v for k, v in ckpt['base_model'].items()}
+            if 'state_dict' in ckpt:
+                base_ckpt = {
+                    k
+                    # Point-MAE
+                    .replace("student.", "blocks.")
+                    .replace("positional_encoding.", "pos_embed.")
+                    .replace("tokenizer.embedding.", "encoder.")
+                    .replace("blocks.norm.", "norm.")
+                    # Point-BERT
+                    .replace("module.encoder.", "tokenizer.embedding.")
+                    .replace("module.reduce_dim.", "tokenizer_to_encoder.")
+                    .replace("module.blocks.", "encoder.")
+                    .replace("module.norm.", "encoder.norm.")
+                    .replace("module.pos_embed.", "positional_encoding.")
+                    .replace("module.cls_token", "cls_token")
+                    .replace("module.cls_pos", "cls_pos")
+                    .replace("module.cls_head_finetune", "cls_head")
+                    # finally
+                    .replace("module.", ""): v
+                    for k, v in ckpt["state_dict"].items()
+                }
+                for k in list(base_ckpt.keys()):
+                    if k.startswith("teacher."):
+                        del base_ckpt[k]
+                    elif k == "mask_token":
+                        del base_ckpt[k]
+                    elif k.startswith("decoder."):
+                        del base_ckpt[k]
+                    elif k.startswith("regressor."):
+                        del base_ckpt[k]
+            else:
+                base_ckpt = {k.replace("module.", ""): v for k, v in ckpt['base_model'].items()}
 
-            for k in list(base_ckpt.keys()):
-                if k.startswith('MAE_encoder'):
-                    base_ckpt[k[len('MAE_encoder.'):]] = base_ckpt[k]
-                    del base_ckpt[k]
-                elif k.startswith('base_model'):
-                    base_ckpt[k[len('base_model.'):]] = base_ckpt[k]
-                    del base_ckpt[k]
+                for k in list(base_ckpt.keys()):
+                    if k.startswith('MAE_encoder'):
+                        base_ckpt[k[len('MAE_encoder.'):]] = base_ckpt[k]
+                        del base_ckpt[k]
+                    elif k.startswith('base_model'):
+                        base_ckpt[k[len('base_model.'):]] = base_ckpt[k]
+                        del base_ckpt[k]
 
             incompatible = self.load_state_dict(base_ckpt, strict=False)
 

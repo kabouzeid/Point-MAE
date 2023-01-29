@@ -3,7 +3,7 @@
 #SBATCH --mem=48G
 #SBATCH --gres=gpu:2
 #SBATCH --job-name=pmae-test
-#SBATCH --time=02:00
+#SBATCH --time=02:00:00
 #SBATCH --partition=trtx-lo
 #SBATCH --begin=now
 #SBATCH --signal=TERM@120

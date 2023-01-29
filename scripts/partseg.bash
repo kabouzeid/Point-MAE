@@ -1,10 +1,6 @@
 #!/bin/bash
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=48G
-#SBATCH --gres=gpu:2
-#SBATCH --job-name=pmae-fine
-#SBATCH --time=1-00:00
-#SBATCH --partition=trtx-lo
+#SBATCH --job-name=pmae-seg
+#SBATCH --time=7-00:00
 #SBATCH --begin=now
 #SBATCH --signal=TERM@120
 #SBATCH --mail-user=karim.abou.zeid@rwth-aachen.de
@@ -16,4 +12,4 @@
 # or this one https://github.com/statgen/SLURM-examples
 # https://github.com/cdt-data-science/cluster-scripts
 
-python main.py --config cfgs/finetune_modelnet.yaml --finetune_model --exp_name "$2" --ckpts experiments/pretrain/cfgs/"$1"/ckpt-last.pth --resume
+cd segmentation && python main.py --ckpts "../experiments/pretrain/cfgs/downloaded/ckpt-last.pth" --root "../data/shapenetcore_partanno_segmentation_benchmark_v0_normal" --learning_rate 0.0002 --epoch 300 --log_dir "$@"
